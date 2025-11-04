@@ -83,15 +83,30 @@ int         smb_fopen(smb_session *s, smb_tid tid, const char *path,
     req.alloc_size     = 0;
     req.file_attr      = 0;
     req.share_access   = SMB_SHARE_READ | SMB_SHARE_WRITE;
-    if ((o_flags & SMB_MOD_RW) == SMB_MOD_RW)
+    req.create_opts    = 0;
+
+    if (o_flags & (SMB_MOD_RW | SMB_MOD_TRUNC))
+        req.create_opts |= SMB_CREATEOPT_WRITE_THROUGH;
+
+    if ( (o_flags & (SMB_MOD_CREATE | SMB_MOD_EXCL)) == (SMB_MOD_CREATE | SMB_MOD_EXCL) ) {
+        req.disposition = SMB_DISPOSITION_FILE_CREATE;
+    }
+    else if ( (o_flags & (SMB_MOD_CREATE | SMB_MOD_TRUNC)) == (SMB_MOD_CREATE | SMB_MOD_TRUNC) ) {
+        req.disposition = SMB_DISPOSITION_FILE_OVERWRITE_IF;
+    }
+    else if ( (o_flags & SMB_MOD_CREATE) ) {
+        req.disposition = SMB_DISPOSITION_FILE_OPEN_IF;
+    }
+    else if ( (o_flags & SMB_MOD_TRUNC) ) {
+        req.disposition = SMB_DISPOSITION_FILE_OVERWRITE;
+    }
+    else if ((o_flags & SMB_MOD_RW) == SMB_MOD_RW)
     {
-        req.disposition    = SMB_DISPOSITION_FILE_SUPERSEDE; // Create if doesn't exist
-        req.create_opts    = SMB_CREATEOPT_WRITE_THROUGH;
+        req.disposition    = SMB_DISPOSITION_FILE_SUPERSEDE;
     }
     else
     {
         req.disposition    = SMB_DISPOSITION_FILE_OPEN;  // Open and fails if doesn't exist
-        req.create_opts    = 0;                          // We dont't support create
     }
     req.impersonation  = SMB_IMPERSONATION_SEC_IMPERSONATE;
     req.security_flags = SMB_SECURITY_NO_TRACKING;

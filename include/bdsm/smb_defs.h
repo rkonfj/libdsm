@@ -101,6 +101,9 @@ enum smb_session_supports_what
 #define SMB_MOD_READ_ATTR       (1 << 7)
 /// Flag for smb_file_open. Request right for writing file attributes
 #define SMB_MOD_WRITE_ATTR      (1 << 8)
+#define SMB_MOD_CREATE          (1 << 9)
+#define SMB_MOD_EXCL            (1 << 10)
+#define SMB_MOD_TRUNC           (1 << 11)
 /// Flag for smb_file_open. Request right for removing file
 #define SMB_MOD_RM              (1 << 16)
 /// Flag for smb_file_open. Request right for reading ACL
@@ -123,6 +126,7 @@ enum smb_session_supports_what
 #define SMB_MOD_GENERIC_READ    (1 << 30)
 /// Flag for smb_file_open. Request generic write right (??)
 #define SMB_MOD_GENERIC_WRITE   (1 << 31)
+
 /**
  * @brief Flag for smb_file_open. Default R/W mode
  * @details A few flags OR'ed
