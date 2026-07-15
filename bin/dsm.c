@@ -126,7 +126,9 @@ int main(int ac, char **av)
   fname     = av[argoffset++];
 
   ns = netbios_ns_new();
-  if (netbios_ns_resolve(ns, host, NETBIOS_FILESERVER, &addr.sin_addr.s_addr)) {
+  uint32_t resolved_addr;
+  if (netbios_ns_resolve(ns, host, NETBIOS_FILESERVER, &resolved_addr)) {
+    addr.sin_addr.s_addr = resolved_addr;
     printf("Unable to resolve %s as a NetBIOS name\n", host);
     exit(-1);
   }

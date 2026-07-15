@@ -32,6 +32,11 @@
 # include "config.h"
 #endif
 
+#ifdef _WIN32
+# include <winsock2.h>
+# include <ws2tcpip.h>
+#endif
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -61,6 +66,7 @@ static int open_socket_and_connect(netbios_session *s)
 {
     int pf = AF_INET;
     int type = SOCK_STREAM;
+    bool wait_connect = false;
 
 #ifndef _WIN32
 #ifdef SOCK_NONBLOCK
@@ -77,10 +83,11 @@ static int open_socket_and_connect(netbios_session *s)
 
 #else
     /* Windows */
-    if ((s->socket = socket(pf, type, 0)) < 0)
+    if ((s->socket = socket(pf, type, 0)) == INVALID_SOCKET)
         goto error;
 
-    ioctlsocket(s->socket, FIONBIO, &(unsigned long){ 1 });
+    if (ioctlsocket(s->socket, FIONBIO, &(unsigned long){ 1 }) == SOCKET_ERROR)
+        goto error;
 #endif
 
 #ifdef SO_NOSIGPIPE
@@ -88,12 +95,35 @@ static int open_socket_and_connect(netbios_session *s)
     if (setsockopt(s->socket, SOL_SOCKET, SO_NOSIGPIPE, &(int){ 1 }, sizeof(int)))
         goto error;
 #endif
-    if (connect(s->socket, (struct sockaddr *)&s->remote_addr, sizeof(s->remote_addr)) <0)
+
+#ifdef _WIN32
+    if (connect(s->socket, (struct sockaddr *)&s->remote_addr,
+                sizeof(s->remote_addr)) == SOCKET_ERROR)
+    {
+        int err = WSAGetLastError();
+
+        if (err != WSAEWOULDBLOCK && err != WSAEINPROGRESS &&
+            err != WSAEINTR && err != WSAEINVAL)
+            goto error;
+
+        wait_connect = true;
+    }
+#else
+    if (connect(s->socket, (struct sockaddr *)&s->remote_addr,
+                sizeof(s->remote_addr)) < 0)
     {
         if (errno != EINPROGRESS && errno != EINTR)
             goto error;
 
-        /* Wait for connection, cf. EINPROGRESS in man connect(2) */
+        wait_connect = true;
+    }
+#endif
+
+    if (wait_connect)
+    {
+        /* Wait for connection, cf. EINPROGRESS in man connect(2).
+         * On Windows, non-blocking connect usually reports WSAEWOULDBLOCK.
+         */
         while (true)
         {
             fd_set read_fds, write_fds;
@@ -110,8 +140,13 @@ static int open_socket_and_connect(netbios_session *s)
 #endif
 
             ret = select(nfds, &read_fds, &write_fds, NULL, NULL);
+#ifdef _WIN32
+            if (ret == SOCKET_ERROR)
+                goto error;
+#else
             if (ret < 0)
                 goto error;
+#endif
 
 #ifdef NS_ABORT_USE_PIPE
             if (FD_ISSET(s->abort_ctx.pipe[0], &read_fds))
@@ -123,20 +158,45 @@ static int open_socket_and_connect(netbios_session *s)
 
             if (FD_ISSET(s->socket, &write_fds))
             {
-                if (getsockopt(s->socket, SOL_SOCKET, SO_ERROR, &ret,
+#ifdef _WIN32
+                int optlen = sizeof(ret);
+
+                if (getsockopt(s->socket, SOL_SOCKET, SO_ERROR,
+                               (char *)&ret, &optlen) == SOCKET_ERROR)
+                    goto error;
+
+                if (ret != 0)
+                {
+                    WSASetLastError(ret);
+                    goto error;
+                }
+#else
+                if (getsockopt(s->socket, SOL_SOCKET, SO_ERROR, (char *)&ret,
                                &(socklen_t){ sizeof (ret) }) || ret)
                 {
                     errno = ret;
                     goto error;
                 }
+#endif
                 break; /* Success */
             }
         }
     }
+
     return DSM_SUCCESS;
 
 error:
+#ifdef _WIN32
+    fprintf(stderr, "netbios_session_new, open_socket: WSAGetLastError=%d\n",
+            WSAGetLastError());
+#else
     BDSM_perror("netbios_session_new, open_socket: ");
+#endif
+    if (s->socket != -1)
+    {
+        closesocket(s->socket);
+        s->socket = -1;
+    }
     return DSM_ERROR_NETWORK;
 }
 

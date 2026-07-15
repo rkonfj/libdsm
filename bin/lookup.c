@@ -55,7 +55,9 @@ int main(int ac, char **av)
     exit(1);
   }
 
-  if (netbios_ns_resolve(ns, av[1], NETBIOS_FILESERVER, &addr.s_addr)) {
+  uint32_t resolved_addr;
+  if (netbios_ns_resolve(ns, av[1], NETBIOS_FILESERVER, &resolved_addr)) {
+    addr.s_addr = resolved_addr;
     exit(-1);
   }
   if (!addr.s_addr)
